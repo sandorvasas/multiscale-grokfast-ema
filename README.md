@@ -6,7 +6,7 @@ Based on: https://arxiv.org/pdf/2405.20233
 Standard GrokFast uses a moving average of the last 100 or so gradients, but that bloats memory af, so I made a version of it using an exponential moving average based approximation of it, so it's O(1) and only stores a single copy of the gradients, like the momentum term in Adam.
 
 ### About Multi-scale Grok Fast EMA
-Then the question arose in me, why choose one window size, when we can have multiple? Just like when we trade stocks, we need more EMAs. Then the EMAs are averaged. This could potentially be improved by dynamically assigning weights to each GrokFast and play around with that WMA of Groks.
+Then the question arose in me, why choose one window size, when we can have multiple? Just like when we trade stocks, we need more EMAs. Then the EMAs are averaged. This could potentially be improved by dynamically assigning weights to each GrokFast and play around with that WMA of Groks. Empirical evidence shows Multi-scale GrokFast can speed up convergence compared to a single GrokFast in some cases.
 
 ## How to use
 
