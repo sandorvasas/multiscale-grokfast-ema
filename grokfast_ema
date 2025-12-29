@@ -1,0 +1,81 @@
+
+
+
+
+import torch
+
+
+class GrokFastEMA:
+    """
+    Based on: https://arxiv.org/pdf/2405.20233
+    
+    Keeps MA of grad history and adds to grad.
+    this amplifies "slow" gradients and suppress "fast" gradients, driving generalization.
+
+    I improve it here using an EMA-based approximation of the SMA to reduce mem footprint.
+    EMA to SMA conversion, smoothing factor:
+
+      beta = 1.0 - 2/(WND_SIZE+1)       for a window of 100, it's around 0.98
+
+    """
+
+    def __init__(self, param_groups, wnd=100, lamb=2.0):
+        self.param_groups = param_groups
+        self.lamb = lamb
+        self.wnd = wnd
+        self.state = {}
+        self.beta = 1.0 - 2.0 / (wnd + 1.0)
+
+    def step(self, add=True):
+        updates = []
+        for g in self.param_groups:
+            for p in g["params"]:
+                if p.grad is None:
+                    continue
+
+                if p not in self.state:
+                    self.state[p] = p.grad.clone()
+
+                g = p.grad.data
+
+                avg = self.state[p]
+                avg.mul_(self.beta).add(g, alpha=1.0 - self.beta)
+
+                delta = g + self.lamb * avg
+                if add:
+                    p.grad.data = delta
+                else:
+                    updates.append(delta)
+        return updates
+
+
+
+class MultiGrokFastEMA:
+    """
+    Combines multiple GrokFasts on different timescales.
+    Empirically it does help to converge faster in some cases.
+    """
+    def __init__(self, param_groups, grok_params=[(100., 4.), (50., 3.), (25., 2.), (10., 1.)]):
+        self.param_groups = param_groups
+        self.groks = [GrokFastEMA(param_groups, wnd, lamb) for wnd, lamb in grok_params]
+
+    def step(self):
+        updates_per_grok = []
+        for g in self.groks:
+            updates_per_grok.append(g.step(add=False))
+
+        group_idx = 0
+        for _, g in enumerate(self.param_groups):
+            for p in g["params"]:
+                if p.grad is None:
+                    continue
+
+                delta = torch.zeros_like(p.grad)
+                for grok_idx, _ in enumerate(self.groks):
+                    delta += updates_per_grok[grok_idx][group_idx]
+                delta /= len(self.groks)
+
+                p.grad.data = delta
+
+                group_idx += 1
+
